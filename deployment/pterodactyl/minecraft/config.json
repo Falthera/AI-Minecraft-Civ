@@ -1,0 +1,30 @@
+{
+  "name": "Minecraft Server",
+  "author": "AI Civilization Project",
+  "description": "Paper 1.21.11 Minecraft server for AI Civilization experiment",
+  "version": "1.0.0",
+  "image": "docker.io/library/eclipse-temurin:21-jre",
+  "cpu_limit": 400,
+  "mem_limit": 20480,
+  "swap": 0,
+  "disk": 51200,
+  "io_weight": 500,
+  "startup_command": "./start.sh",
+  "environment": {
+    "JAVA_XMX": "4G",
+    "JAVA_XMS": "2G"
+  },
+  "ports": [
+    {
+      "type": "tcp",
+      "port": 25565,
+      "external_port": "25565"
+    }
+  ],
+  "volumes": [
+    {
+      "name": "minecraft_data",
+      "mount_path": "/data"
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+name: AICivilization
+version: ${project.version}
+main: dev.aicivilization.plugin.AICivilizationPlugin
+api-version: '1.21'
+author: AI Civilization Project
+description: Paper plugin for autonomous AI-controlled Minecraft civilization experiment.
+softdepend: []
+
+commands:
+  ai-civ:
+    description: AI Civilization administration
+    usage: /<command> <status|agents|civilizations|settlements>
+    aliases: [aiciv]
+
+permissions:
+  ai-civilization.admin:
+    description: Administer the AI Civilization experiment
+    default: op
+    children:
+      ai-civilization.status: true
+      ai-civilization.agents: true
+      ai-civilization.civilizations: true
+
+  ai-civilization.status:
+    description: View experiment status
+    default: op
+
+  ai-civilization.agents:
+    description: Manage agents
+    default: op
+
+  ai-civilization.civilizations:
+    description: Manage civilizations
+    default: op

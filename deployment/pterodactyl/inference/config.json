@@ -1,0 +1,25 @@
+{
+  "name": "AI Inference",
+  "author": "AI Civilization Project",
+  "description": "Local LLM inference service for AI decisions",
+  "version": "1.0.0",
+  "image": "docker.io/library/python:3.12-slim",
+  "cpu_limit": 800,
+  "mem_limit": 20480,
+  "swap": 0,
+  "disk": 51200,
+  "io_weight": 500,
+  "startup_command": "./start.sh",
+  "environment": {
+    "AI_INFERENCE_API_KEY": "changeme",
+    "FAST_MODEL_PATH": "/models/fast-model.gguf",
+    "MAIN_MODEL_PATH": "/models/main-model.gguf"
+  },
+  "ports": [],
+  "volumes": [
+    {
+      "name": "models",
+      "mount_path": "/models"
+    }
+  ]
+}

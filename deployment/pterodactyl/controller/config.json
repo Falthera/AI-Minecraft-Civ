@@ -1,0 +1,21 @@
+{
+  "name": "AI Controller",
+  "author": "AI Civilization Project",
+  "description": "AI Controller service for agent management and simulation",
+  "version": "1.0.0",
+  "image": "docker.io/library/python:3.12-slim",
+  "cpu_limit": 200,
+  "mem_limit": 8192,
+  "swap": 0,
+  "disk": 10240,
+  "io_weight": 500,
+  "startup_command": "./start.sh",
+  "environment": {
+    "DATABASE_URL": "postgresql://ai_civilization:changeme@postgres:5432/ai_civilization",
+    "AI_CONTROLLER_API_KEY": "changeme",
+    "AI_INFERENCE_API_URL": "http://inference:8001",
+    "AI_INFERENCE_API_KEY": "changeme"
+  },
+  "ports": [],
+  "volumes": []
+}

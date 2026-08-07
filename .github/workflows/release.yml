@@ -1,0 +1,202 @@
+name: Release
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: "Semantic version bump (major/minor/patch)"
+        required: false
+        default: "patch"
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+      prerelease:
+        description: "Mark as pre-release"
+        required: false
+        default: "false"
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Artifacts
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "minecraft/client-bots/package-lock.json"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: |
+            controller/requirements.txt
+            inference/requirements.txt
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+          cache: "maven"
+          cache-dependency-path: "minecraft/plugin/pom.xml"
+
+      - name: Determine version
+        id: version
+        run: |
+          # Read VERSION file if it exists, otherwise generate a timestamp-based version
+          if [ -f VERSION ]; then
+            BASE_VERSION=$(cat VERSION | tr -d ' \n\r')
+          else
+            BASE_VERSION="0.1.0"
+          fi
+
+          # Determine bump level
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            BUMP="${{ github.event.inputs.version_bump }}"
+          else
+            BUMP="patch"
+          fi
+
+          # Calculate new version based on last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            NEW_VERSION="$BASE_VERSION"
+          else
+            # Strip 'v' prefix if present
+            LAST_VERSION=${LAST_TAG#v}
+            NEW_VERSION=$(python3 -c "
+import re
+last='$LAST_VERSION'
+base='$BASE_VERSION'
+bump='$BUMP'
+parts=last.split('.')
+if len(parts) != 3:
+    parts=base.split('.')
+if bump == 'major':
+    parts[0]=str(int(parts[0])+1)
+    parts[1]='0'
+    parts[2]='0'
+elif bump == 'minor':
+    parts[1]=str(int(parts[1])+1)
+    parts[2]='0'
+else:
+    parts[2]=str(int(parts[2])+1)
+print('.'.join(parts))
+")
+          fi
+
+          # Add build metadata with short commit SHA
+          COMMIT_SHORT=$(git rev-parse --short HEAD)
+          VERSION_WITH_BUILD="${NEW_VERSION}+${COMMIT_SHORT}"
+
+          echo "version=${VERSION_WITH_BUILD}" >> $GITHUB_OUTPUT
+          echo "tag=v${VERSION_WITH_BUILD}" >> $GITHUB_ENV
+          echo "is_prerelease=${{ github.event.inputs.prerelease == 'true' }}" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            CHANGELOG="## Initial Release\n\nFirst automated release from CI."
+          else
+            CHANGELOG=$(git log ${LAST_TAG}..HEAD --oneline --no-merges | sed 's/^/- /')
+            if [ -z "$CHANGELOG" ]; then
+              CHANGELOG="No changes since last release."
+            fi
+          fi
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Build Paper Plugin (Java)
+        run: |
+          cd minecraft/plugin
+          mvn clean package -DskipTests
+
+      - name: Build Client Bots (Node.js)
+        run: |
+          cd minecraft/client-bots
+          npm ci
+          npm run build
+          tar -czf ../client-bots-${{ env.tag }}.tar.gz -C dist .
+
+      - name: Build Controller & Inference (Python)
+        run: |
+          cd controller
+          pip install -r requirements.txt -t .
+          cd ../inference
+          pip install -r requirements.txt -t .
+          cd ..
+          zip -r controller-inference-${{ env.tag }}.zip controller inference database
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p release-artifacts
+          cp minecraft/plugin/target/*.jar release-artifacts/ || true
+          cp minecraft/client-bots-*.tar.gz release-artifacts/ || true
+          cp controller-inference-*.zip release-artifacts/ || true
+          echo "Artifacts collected:"
+          ls -la release-artifacts/
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: release-artifacts/
+          retention-days: 7
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ needs.build.outputs.version != '' }}
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: release-artifacts/
+
+      - name: Create Git tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ env.tag }}
+          git push origin ${{ env.tag }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.tag }}
+          name: Release ${{ env.tag }}
+          body: ${{ needs.build.outputs.changelog }}
+          prerelease: ${{ needs.build.outputs.is_prerelease }}
+          files: release-artifacts/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,120 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai-civilization-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ai_civilization
+      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB: ai_civilization
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    networks:
+      - ai-civilization
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_civilization"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  inference:
+    build:
+      context: ../inference
+      dockerfile: ../docker/inference/Dockerfile
+    container_name: ai-civilization-inference
+    restart: unless-stopped
+    environment:
+      - AI_INFERENCE_API_KEY=${AI_INFERENCE_API_KEY:-changeme}
+      - FAST_MODEL_PATH=/models/fast-model.gguf
+      - MAIN_MODEL_PATH=/models/main-model.gguf
+    volumes:
+      - ../../models:/models:ro
+    networks:
+      - ai-civilization
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  controller:
+    build:
+      context: ../controller
+      dockerfile: ../docker/controller/Dockerfile
+    container_name: ai-civilization-controller
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://ai_civilization:changeme@postgres:5432/ai_civilization}
+      - AI_CONTROLLER_API_KEY=${AI_CONTROLLER_API_KEY:-changeme}
+      - MINECRAFT_API_URL=http://minecraft:25565
+      - MINECRAFT_API_KEY=${MINECRAFT_API_KEY:-changeme}
+      - AI_INFERENCE_API_URL=http://inference:8001
+      - AI_INFERENCE_API_KEY=${AI_INFERENCE_API_KEY:-changeme}
+    networks:
+      - ai-civilization
+    depends_on:
+      inference:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  minecraft:
+    build:
+      context: ../minecraft
+      dockerfile: ../docker/minecraft/Dockerfile
+    container_name: ai-civilization-minecraft
+    restart: unless-stopped
+    ports:
+      - "25565:25565"
+    environment:
+      - AI_CONTROLLER_API_KEY=${AI_CONTROLLER_API_KEY:-changeme}
+      - AI_CONTROLLER_URL=http://controller:8000
+    volumes:
+      - minecraft_data:/data
+    networks:
+      - ai-civilization
+    depends_on:
+      controller:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "mcstatus", "localhost:25565"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+  client-bots:
+    build:
+      context: ../minecraft/client-bots
+      dockerfile: ../../docker/client-bots/Dockerfile
+    container_name: ai-civilization-client-bots
+    restart: unless-stopped
+    environment:
+      - MINECRAFT_HOST=minecraft
+      - MINECRAFT_PORT=25565
+      - AI_CONTROLLER_URL=http://controller:8000
+      - AI_CONTROLLER_API_KEY=${AI_CONTROLLER_API_KEY:-changeme}
+      - BOT_COUNT=${BOT_COUNT:-1}
+    networks:
+      - ai-civilization
+    depends_on:
+      minecraft:
+        condition: service_healthy
+    deploy:
+      replicas: 1
+
+volumes:
+  postgres_data:
+  minecraft_data:
+
+networks:
+  ai-civilization:
+    driver: bridge
