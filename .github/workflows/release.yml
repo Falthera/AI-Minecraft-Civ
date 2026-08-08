@@ -41,9 +41,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
-          cache-dependency-path: "minecraft/client-bots/package-lock.json"
+          cache-dependency-path: "minecraft/client-bots/package.json"
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -124,17 +124,20 @@ jobs:
         id: changelog
         run: |
           LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo "")"
+          mkdir -p /tmp/release
           if [ -z "$LAST_TAG" ]; then
             CHANGELOG="## Initial Release"
-            CHANGELOG="${CHANGELOG}"$'\n\n'"First automated release from CI."
+            echo "$CHANGELOG" > /tmp/release/CHANGELOG.md
+            echo "" >> /tmp/release/CHANGELOG.md
+            echo "First automated release from CI." >> /tmp/release/CHANGELOG.md
           else
             CHANGELOG="$(git log "$LAST_TAG"..HEAD --oneline --no-merges | sed 's/^/- /')"
             if [ -z "$CHANGELOG" ]; then
-              CHANGELOG="No changes since last release."
+              echo "No changes since last release." > /tmp/release/CHANGELOG.md
+            else
+              echo "$CHANGELOG" > /tmp/release/CHANGELOG.md
             fi
           fi
-          mkdir -p /tmp/release
-          printf '%s\n' "$CHANGELOG" > /tmp/release/CHANGELOG.md
           echo "changelog_path=/tmp/release/CHANGELOG.md" >> "$GITHUB_OUTPUT"
 
       - name: Build Paper Plugin (Java)
