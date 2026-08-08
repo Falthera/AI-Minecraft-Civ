@@ -125,9 +125,8 @@ jobs:
         run: |
           LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo "")"
           if [ -z "$LAST_TAG" ]; then
-            CHANGELOG="## Initial Release
-
-First automated release from CI."
+            CHANGELOG="## Initial Release"
+            CHANGELOG="${CHANGELOG}"$'\n\n'"First automated release from CI."
           else
             CHANGELOG="$(git log "$LAST_TAG"..HEAD --oneline --no-merges | sed 's/^/- /')"
             if [ -z "$CHANGELOG" ]; then
