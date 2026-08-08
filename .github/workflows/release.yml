@@ -66,71 +66,77 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          # Read VERSION file if it exists, otherwise generate a timestamp-based version
+          BASE_VERSION="0.1.0"
           if [ -f VERSION ]; then
-            BASE_VERSION=$(cat VERSION | tr -d ' \n\r')
-          else
-            BASE_VERSION="0.1.0"
+            BASE_VERSION="$(cat VERSION | tr -d ' \n\r')"
           fi
 
-          # Determine bump level
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             BUMP="${{ github.event.inputs.version_bump }}"
           else
             BUMP="patch"
           fi
 
-          # Calculate new version based on last tag
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo "")"
           if [ -z "$LAST_TAG" ]; then
             NEW_VERSION="$BASE_VERSION"
           else
-            # Strip 'v' prefix if present
-            LAST_VERSION=${LAST_TAG#v}
-            NEW_VERSION=$(python3 -c "
-import re
-last='$LAST_VERSION'
-base='$BASE_VERSION'
-bump='$BUMP'
-parts=last.split('.')
-if len(parts) != 3:
-    parts=base.split('.')
-if bump == 'major':
-    parts[0]=str(int(parts[0])+1)
-    parts[1]='0'
-    parts[2]='0'
-elif bump == 'minor':
-    parts[1]=str(int(parts[1])+1)
-    parts[2]='0'
-else:
-    parts[2]=str(int(parts[2])+1)
-print('.'.join(parts))
-")
+            LAST_VERSION="${LAST_TAG#v}"
+            IFS='.' read -r MAJOR MINOR PATCH <<EOF
+$LAST_VERSION
+EOF
+            if [ -z "$MAJOR" ] || [ -z "$MINOR" ] || [ -z "$PATCH" ]; then
+              IFS='.' read -r MAJOR MINOR PATCH <<EOF
+$BASE_VERSION
+EOF
+            fi
+            case "$BUMP" in
+              major)
+                MAJOR="$((MAJOR + 1))"
+                MINOR="0"
+                PATCH="0"
+                ;;
+              minor)
+                MINOR="$((MINOR + 1))"
+                PATCH="0"
+                ;;
+              *)
+                PATCH="$((PATCH + 1))"
+                ;;
+            esac
+            NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
           fi
 
-          # Add build metadata with short commit SHA
-          COMMIT_SHORT=$(git rev-parse --short HEAD)
+          COMMIT_SHORT="$(git rev-parse --short HEAD)"
           VERSION_WITH_BUILD="${NEW_VERSION}+${COMMIT_SHORT}"
 
-          echo "version=${VERSION_WITH_BUILD}" >> $GITHUB_OUTPUT
-          echo "tag=v${VERSION_WITH_BUILD}" >> $GITHUB_ENV
-          echo "is_prerelease=${{ github.event.inputs.prerelease == 'true' }}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION_WITH_BUILD}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION_WITH_BUILD}" >> "$GITHUB_ENV"
+          if [ "${{ github.event.inputs.prerelease }}" == "true" ]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Generate changelog
         id: changelog
         run: |
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo "")"
           if [ -z "$LAST_TAG" ]; then
-            CHANGELOG="## Initial Release\n\nFirst automated release from CI."
+            CHANGELOG="## Initial Release
+
+First automated release from CI."
           else
-            CHANGELOG=$(git log ${LAST_TAG}..HEAD --oneline --no-merges | sed 's/^/- /')
+            CHANGELOG="$(git log "$LAST_TAG"..HEAD --oneline --no-merges | sed 's/^/- /')"
             if [ -z "$CHANGELOG" ]; then
               CHANGELOG="No changes since last release."
             fi
           fi
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          {
+            echo "changelog<<EOF"
+            echo "$CHANGELOG"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build Paper Plugin (Java)
         run: |
@@ -186,8 +192,8 @@ print('.'.join(parts))
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag ${{ env.tag }}
-          git push origin ${{ env.tag }}
+          git tag "${{ env.tag }}"
+          git push origin "${{ env.tag }}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
